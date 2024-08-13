@@ -1,0 +1,9 @@
+apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+    name: {{ .metadata.name }}
+spec:
+{{ if .spec.repositoryDigestMirrors }}
+  repositoryDigestMirrors:
+{{ .spec.repositoryDigestMirrors | toYaml | indent 2 }}
+{{end}}
