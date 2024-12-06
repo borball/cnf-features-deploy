@@ -574,6 +574,7 @@ func Test_siteConfigBuildExtraManifestPaths(t *testing.T) {
 
 	relativeManifestPath := "testdata/extra-manifest"
 	absoluteManifestPath, err := filepath.Abs(relativeManifestPath)
+	emptyFileManifestPath := filepath.Join(relativeManifestPath, "00-predefined-emptymanifest.yaml")
 	assert.Equal(t, err, nil)
 
 	// Test 1: Test with relative manifest path
@@ -592,6 +593,19 @@ func Test_siteConfigBuildExtraManifestPaths(t *testing.T) {
 	sc.Spec.Clusters[0].NetworkType = "OVNKubernetes"
 	_, err = scBuilder.Build(sc)
 	assert.NoError(t, err)
+
+	// Test 3: Test with empty file in path
+
+	scBuilder, _ = NewSiteConfigBuilder()
+	scBuilder.SetLocalExtraManifestPath(absoluteManifestPath)
+	file, err := os.OpenFile(emptyFileManifestPath, os.O_WRONLY|os.O_CREATE, 0644)
+	sc.Spec.Clusters[0].NetworkType = "OVNKubernetes"
+	_, err = scBuilder.Build(sc)
+	assert.NoError(t, err)
+	defer func() {
+		file.Close()
+		os.Remove(emptyFileManifestPath)
+	}()
 }
 
 func Test_siteConfigBuildExtraManifest(t *testing.T) {
@@ -1860,6 +1874,101 @@ spec:
 	result, err = scBuilder.Build(sc)
 	nmState, err = getKind(result["test-site/cluster1/node1"], "NMStateConfig")
 	assert.NotEqual(t, nmState, nil)
+}
+
+func Test_managedclusterLabel(t *testing.T) {
+	// test for when user did not provide vendor and cloud labels
+	ManagedCluster := `
+apiVersion: ran.openshift.io/v1
+kind: SiteConfig
+metadata:
+  name: "test-site"
+spec:
+  clusterImageSetNameRef: "openshift-v4.8.0"
+  clusters:
+  - clusterName: "cluster1"
+    clusterLabels:
+      group-du-sno: ""
+      common: true
+      sites : "test-site"
+    nodes:
+      - hostName: "node1"
+`
+	sc := SiteConfig{}
+	err := yaml.Unmarshal([]byte(ManagedCluster), &sc)
+	assert.Equal(t, err, nil)
+
+	scBuilder, _ := NewSiteConfigBuilder()
+	scBuilder.SetLocalExtraManifestPath("testdata/extra-manifest")
+	result, err := scBuilder.Build(sc)
+	mcls, err := getKind(result["test-site/cluster1"], "ManagedCluster")
+
+	metadata := mcls["metadata"].(map[string]interface{})
+	labels, _ := metadata["labels"].(map[string]string)
+	assert.Equal(t, labels["vendor"], "auto-detect")
+	assert.Equal(t, labels["cloud"], "auto-detect")
+	assert.Equal(t, labels["sites"], "test-site")
+
+	// test for when user provided vendor but not cloud
+	ManagedCluster = `
+apiVersion: ran.openshift.io/v1
+kind: SiteConfig
+metadata:
+  name: "test-site"
+spec:
+  clusterImageSetNameRef: "openshift-v4.8.0"
+  clusters:
+  - clusterName: "cluster1"
+    clusterLabels:
+      group-du-sno: ""
+      common: true
+      sites : "test-site"
+      vendor: "my-vendor"
+    nodes:
+      - hostName: "node1"
+`
+	sc = SiteConfig{}
+	err = yaml.Unmarshal([]byte(ManagedCluster), &sc)
+	assert.Equal(t, err, nil)
+
+	scBuilder, _ = NewSiteConfigBuilder()
+	scBuilder.SetLocalExtraManifestPath("testdata/extra-manifest")
+	result, err = scBuilder.Build(sc)
+	mcls, err = getKind(result["test-site/cluster1"], "ManagedCluster")
+
+	metadata = mcls["metadata"].(map[string]interface{})
+	labels, _ = metadata["labels"].(map[string]string)
+	assert.Equal(t, labels["vendor"], "my-vendor")
+	assert.Equal(t, labels["cloud"], "auto-detect")
+	assert.Equal(t, labels["sites"], "test-site")
+
+	// test for when no labels are provided from SiteConfig
+	ManagedCluster = `
+apiVersion: ran.openshift.io/v1
+kind: SiteConfig
+metadata:
+  name: "test-site"
+spec:
+  clusterImageSetNameRef: "openshift-v4.8.0"
+  clusters:
+  - clusterName: "cluster1"
+    nodes:
+      - hostName: "node1"
+`
+	sc = SiteConfig{}
+	err = yaml.Unmarshal([]byte(ManagedCluster), &sc)
+	assert.Equal(t, err, nil)
+
+	scBuilder, _ = NewSiteConfigBuilder()
+	scBuilder.SetLocalExtraManifestPath("testdata/extra-manifest")
+	result, err = scBuilder.Build(sc)
+	mcls, err = getKind(result["test-site/cluster1"], "ManagedCluster")
+
+	metadata = mcls["metadata"].(map[string]interface{})
+	labels, _ = metadata["labels"].(map[string]string)
+	assert.Equal(t, labels["vendor"], "auto-detect")
+	assert.Equal(t, labels["cloud"], "auto-detect")
+	assert.Equal(t, len(labels), 2)
 }
 
 func Test_filterExtraManifests(t *testing.T) {

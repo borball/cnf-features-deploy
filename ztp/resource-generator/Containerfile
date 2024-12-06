@@ -1,5 +1,5 @@
 # Builder
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.21-openshift-4.16 as builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.22-openshift-4.18 as builder
 ARG IMAGE_REF
 USER root
 ENV PKG_ROOT=cnf-features-deploy
@@ -37,6 +37,7 @@ WORKDIR $ZTP_HOME
 COPY --from=builder $BUILDER_ZTP/source-crs source-crs
 COPY --from=builder $BUILDER_ZTP/source-crs/extra-manifest extra-manifest
 COPY --from=builder $BUILDER_ZTP/gitops-subscriptions/argocd argocd
+COPY --from=builder $BUILDER_ZTP/kube-compare-reference reference
 RUN chown -R 1001:1001 $ZTP_HOME
 # Copy in the entrypoint scripts
 COPY --from=builder $BUILDER_ZTP/resource-generator/entrypoints/* /usr/bin
